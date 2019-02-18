@@ -104,15 +104,35 @@ def calc_mse(X_test_normalized, y_test_normalized, X_train_normalized, y_train_n
         #print(mse)
     return mse / X_test_normalized.shape[0]
 
+def calc_mse_traj(X_test_normalized, y_test_normalized, X_train_normalized, y_train_normalized):
+    mse_list = []
+    k = 10
+    prev = X_test_normalized[0,:].reshape(1,-1)
+    for i in range(0, k):
+        y_new = transition_model(prev, X_train_normalized, y_train_normalized)
+        mse = np.mean(np.linalg.norm(y_test_normalized[i, :].reshape(1,-1) - y_new)**2)
+        mse_list.append(mse)
+        print("y_new.shape: {}".format(y_new.shape)) # (1,4)
+        prev = np.concatenate([y_new, X_test_normalized[i+1, 4:6].reshape(1,-1)], axis=1)
+    return mse_list
+    
+    
 X_train_normalized, X_test_normalized, y_train_normalized, y_test_normalized = get_train_test_normalized(big)
 tic = time.time()
-mse_big = calc_mse(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized)
-print(mse_big)
+#mse_big = calc_mse(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized)
+#print(mse_big)
+mse_list_big = calc_mse_traj(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized)
+import pickle
+with open('mse_list_big.pkl', 'wb') as f:
+    pickle.dump(mse_list_big, f)
 toc = time.time()
 print("time: {}".format(tic - toc))
 
 _, X_test_normalized, _, y_test_normalized = get_train_test_normalized(small)
 tic = time.time()
-print(calc_mse(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized))
+#print(calc_mse(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized))
+mse_list_small = calc_mse_traj(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized)
+with open('mse_list_small.pkl', 'wb') as f:
+    pickle.dump(mse_list_small, f)
 toc = time.time()
 print("time: {}".format(tic - toc))

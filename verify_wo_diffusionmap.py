@@ -66,40 +66,43 @@ def get_train_test_normalized(big):
     y_test_normalized = normalize_data_per_row(y_test, min_param_y, max_param_y)
     return X_train_normalized, X_test_normalized, y_train_normalized, y_test_normalized
 
-def transition_model(x_query, X_train_normalized, y_train_normalized, k1=1000, m=3, k2=100):
+def transition_model(x_query, X_train_normalized, y_train_normalized, k1=1000, m=3, k2=1000):
     file_path = os.path.join(datapath_base, 'nbrs.pkl')
     if os.path.exists(file_path):
         with open(file_path, 'rb') as f:
             nbrs = pickle.load(f)
     else:
-        nbrs = NearestNeighbors(n_neighbors=k1, algorithm='ball_tree').fit(X_train_normalized)
+        nbrs = NearestNeighbors(n_neighbors=k2, algorithm='ball_tree').fit(X_train_normalized)
         print("This is going to take about 15 min...")
         with open('nbrs.pkl', 'wb') as f:
             pickle.dump(nbrs, f)
     
     # Step1: Find K1 (=1000) nearest points in training data. Let the closest pair to $(x,a)$ be $(x_h, a_h)$
     distances, indices = nbrs.kneighbors(x_query.reshape(1,-1))
+    #print(distances[0,0])
+    #print(X_train_normalized.shape)
     X_selected = X_train_normalized[indices.reshape(-1), :]
     y_selected = y_train_normalized[indices.reshape(-1), :]
     
     # Step2: Diffusin map is created based on these 1000 points, which yields a reduced dimensional data
-    embedding = SpectralEmbedding(n_components=m) 
-    X_spectral = embedding.fit_transform(X_selected) 
+    #embedding = SpectralEmbedding(n_components=m) 
+    #X_spectral = embedding.fit_transform(X_selected) 
     # y_spectral = embedding.fit_transform(y_selected) 
     
     # Step3: K2 (=100) closest points in the reduced dimensional data to the $(x_h, a_h)$ in the diffusion map is found
-    nbrs_diffusion = NearestNeighbors(n_neighbors=k2, algorithm='ball_tree').fit(X_spectral)
-    distances_diffusion, indices_diffusion = nbrs_diffusion.kneighbors(X_spectral[0, :].reshape(1, -1))
+    #nbrs_diffusion = NearestNeighbors(n_neighbors=k2, algorithm='ball_tree').fit(X_spectral)
+    #distances_diffusion, indices_diffusion = nbrs_diffusion.kneighbors(X_spectral[0, :].reshape(1, -1))
 
     # Step4: Perform GP regression on these 100 points.
-    X_GP_input = X_spectral[indices_diffusion.reshape(-1), :]
-    y_GP_input = y_selected[indices_diffusion.reshape(-1), :]
+    X_GP_input = X_selected
+    y_GP_input = y_selected
     #print("X_GP_input.shape: {}".format(X_GP_input.shape))
     #print("y_GP_input.shape: {}".format(y_GP_input.shape))
 
     gpr = GaussianProcessRegressor(kernel=None,random_state=0).fit(X_GP_input, y_GP_input)
-    y_pred = gpr.predict(X_spectral[0,:].reshape(1,m)) 
+    y_pred = gpr.predict(x_query.reshape(1,-1)) 
     return y_pred
+
 
 def calc_mse(X_test_normalized, y_test_normalized, X_train_normalized, y_train_normalized):
     mse = 0
@@ -122,7 +125,10 @@ def calc_mse_traj(X_test_normalized, y_test_normalized, X_train_normalized, y_tr
         mse_list.append(mse)
         print("y_new.shape: {}".format(y_new.shape)) # (1,4)
         traj_list.append(y_new)
+        print(X_test_normalized[i+1, 4:6].reshape(1,-1))
+        print(X_test_normalized[i+1, 4:6].reshape(1,-1).shape)
         prev = np.concatenate([y_new, X_test_normalized[i+1, 4:6].reshape(1,-1)], axis=1)
+        #prev = np.concatenate([np.concatenate([y_new, X_test_normalized[i+1, 4].reshape(1,-1)], axis=1), X_test_normalized[i+1, 5].reshape(1,-1)], axis=1)
     return mse_list, traj_list
     
     
@@ -130,21 +136,21 @@ X_train_normalized, X_test_normalized, y_train_normalized, y_test_normalized = g
 tic = time.time()
 #mse_big = calc_mse(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized)
 #print(mse_big)
-mse_list_big, traj_list_big = calc_mse_traj(X_test_normalized[:200,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized)
+mse_list_big, traj_list_big = calc_mse_traj(X_train_normalized[200:400,:], y_train_normalized[200:400,:], X_train_normalized, y_train_normalized)
 import pickle
 with open('mse_list_big.pkl', 'wb') as f:
     pickle.dump(mse_list_big, f)
 with open('traj_list_big.pkl', 'wb') as f:
     pickle.dump(traj_list_big, f)
 with open('traj_ground_truth.pkl', 'wb') as f:
-    pickle.dump(X_test_normalized[:200,:], f)
+    pickle.dump(X_train_normalized[200:400,:], f)
 toc = time.time()
 print("time: {}".format(tic - toc))
 
 _, X_test_normalized, _, y_test_normalized = get_train_test_normalized(small)
 tic = time.time()
 #print(calc_mse(X_test_normalized[:100,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized))
-mse_list_small, traj_list_small = calc_mse_traj(X_test_normalized[:200,:], y_test_normalized[:100,:], X_train_normalized, y_train_normalized)
+mse_list_small, traj_list_small = calc_mse_traj(X_test_normalized[:200,:], y_test_normalized[:200,:], X_train_normalized, y_train_normalized)
 with open('mse_list_small.pkl', 'wb') as f:
     pickle.dump(mse_list_small, f)
 with open('traj_list_small.pkl', 'wb') as f:

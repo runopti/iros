@@ -10,6 +10,10 @@ import os
 import time
 from sklearn.manifold import SpectralEmbedding
 from sklearn.gaussian_process import GaussianProcessRegressor
+import GPy
+from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel
+import gp
+
 
 # Step 0: split the data into train and test
 datapath_base = "/data/yutaro/IROS/"
@@ -66,7 +70,19 @@ def get_train_test_normalized(big):
     y_test_normalized = normalize_data_per_row(y_test, min_param_y, max_param_y)
     return X_train_normalized, X_test_normalized, y_train_normalized, y_test_normalized
 
-def transition_model(x_query, X_train_normalized, y_train_normalized, k1=1000, m=3, k2=1000):
+def get_train_test_normalized(big):
+    X_train, X_test, y_train, y_test = my_train_test_split(big['D'][:,:6], big['D'][:,6:], test_size=0.1, random_state=42)
+    min_param, max_param = compute_normalization_parameters(X_train[:,:4])
+    min_param_y, max_param_y = compute_normalization_parameters(y_train[:,:4])
+    X_train_normalized = np.concatenate([normalize_data_per_row(X_train[:,:4], min_param, max_param), X_train[:,4:6]],axis=1)
+    X_test_normalized = np.concatenate([normalize_data_per_row(X_test[:,:4], min_param, max_param), X_test[:,4:6]],axis=1)
+    y_train_normalized = np.concatenate([normalize_data_per_row(y_train[:,:4], min_param_y, max_param_y), y_train[:,4:6]],axis=1)
+    y_test_normalized = np.concatenate([normalize_data_per_row(y_test[:,:4], min_param_y, max_param_y),y_test[:,4:6]],axis=1)
+    return X_train_normalized, X_test_normalized, y_train_normalized, y_test_normalized
+
+
+
+def transition_model(x_query, X_train_normalized, y_train_normalized, k1=1000, m=3, k2=100):
     file_path = os.path.join(datapath_base, 'nbrs.pkl')
     if os.path.exists(file_path):
         with open(file_path, 'rb') as f:
@@ -99,9 +115,37 @@ def transition_model(x_query, X_train_normalized, y_train_normalized, k1=1000, m
     #print("X_GP_input.shape: {}".format(X_GP_input.shape))
     #print("y_GP_input.shape: {}".format(y_GP_input.shape))
 
-    gpr = GaussianProcessRegressor(kernel=None,random_state=0).fit(X_GP_input, y_GP_input)
-    y_pred = gpr.predict(x_query.reshape(1,-1)) 
-    return y_pred
+    """
+    #kernel = DotProduct() + WhiteKernel()
+    y_GP_input = y_GP_input - X_GP_input[:, :4]
+    gpr = GaussianProcessRegressor(kernel=None,random_state=0,n_restarts_optimizer=10).fit(X_GP_input, y_GP_input)
+    ds_next = gpr.predict(x_query.reshape(1,-1)) 
+    print("ds_next.shape: {}".format(ds_next.shape))
+    s_next = x_query[0, :4] + ds_next
+    print("s_next.shape: {}".format(s_next.shape))
+    """
+    ### Avishai's stuff
+    
+    ds_next = np.zeros((4,))
+    std_next = np.zeros((4,))
+    y_GP_input = y_GP_input - X_GP_input[:, :4]
+    for i in range(4):
+        gpr = gp.GaussianProcess(X_GP_input, y_GP_input[:,i], optimize = True, theta = None) 
+        mm, vv = gpr.predict(x_query.reshape(-1))
+        ds_next[i] = mm
+        std_next[i] = np.sqrt(np.diag(vv))
+    print("std_next: {}".format(std_next))
+    s_next = x_query[0, :4] + ds_next.reshape(1,-1) #np.random.normal(ds_next, std_next).reshape(1,-1)   
+    
+    
+    #kernel = GPy.kern.RBF(input_dim=6)
+    #model = GPy.models.GPRegression(X_GP_input, y_GP_input, kernel)
+    #model.optimize()
+    #y_pred = model.predict(x_query.reshape(1,-1))
+    #print(y_pred)
+    #print(s_next)
+    return s_next
+    #return y_pred[0]
 
 
 def calc_mse(X_test_normalized, y_test_normalized, X_train_normalized, y_train_normalized):
